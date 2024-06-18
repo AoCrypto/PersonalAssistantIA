@@ -63,7 +63,7 @@ def listen():
 def main():
     while True:
         # Écoutez l'entrée de l'utilisateur
-        command = input()
+        command = listen()
         if "launch" in command:
             command = command.replace("launch","")
             pyautogui.press('super')
