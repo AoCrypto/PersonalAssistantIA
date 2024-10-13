@@ -12,8 +12,10 @@ from tkinter import filedialog
 from jokeapi import Jokes
 import pygetwindow as gw
 from tkinter import Tk
+from PIL import Image
 import numpy as np
 import pyautogui
+import datetime
 import easyocr
 import pyttsx3
 import pyjokes
@@ -22,6 +24,7 @@ import psutil
 import fitz
 import time
 import sys
+import os
 import re
 
 ollam_nlp = OllamaNLP()
@@ -61,10 +64,12 @@ async def print_joke():
     j = await Jokes()
     joke = await j.get_joke(lang="fr")
     if joke["type"] == "single":
-        print(joke["joke"])
+        return joke["joke"]
     else:
-        print(joke["setup"])
-        print(joke["delivery"])
+        debut = joke["setup"]
+        fin = joke["delivery"]
+        blague_entiere = f"{debut} {fin}"
+        return blague_entiere
 
 def control_media(command):
     if "play" in command :
@@ -79,22 +84,45 @@ def control_media(command):
     elif "debut" in command :
         pyautogui.press("prevtrack")
 
+def get_time():
+    current_time = datetime.datetime.now()
+    formatted_time = current_time.strftime("%H:%M")
+    return formatted_time
+
+def screenshot():
+    im1 = pyautogui.screenshot()
+    im1.save('screenshot.png')
+    img1 = Image.open('screenshot.png')
+    img1.show()
+
+chat_memory = []
+
+long_term_memory = []
+
 async def anthony_ai(command):
+
     choice = ollam_nlp.generate_text(
         prompt=f"""Réponds avec une seule phrase concise, sans explication ni balise. Tu ne dois pas te tromper sur l'ortographe de la valeur que tu renvois
 Choisis parmi les options suivantes en fonction de la demande de l'utilisateur :
-- 'Web_search' pour une recherche internet
 - 'Control_sound' pour contrôler le son
+- 'Screenshot' pour prendre une capture d'écran
 - 'Launch' suivi du nom de l'application pour l'ouvrir
-- 'Gen_image' pour générer une image
+- 'Gen_image' pour générer ou créer ou dessiner une image
 - 'Psu_bat' pour des informations sur la batterie
 - 'Jokes' pour une blague
 - 'Control_music' suivi de 'play', 'pause', 'next', 'previous' ou 'beginning' pour contrôler la musique
 - 'Ocr' pour extraire du texte d'un PDF
-Fais ceci avec cette phrase : {command}""",
+- 'Time' pour l'heure actuelle
+- 'Web_search' pour effectuer une recherche internet afin d'avoir des informations en plus
+- 'text' pour répondre si aucune des fonctions précédentes ne s'appliquent
+- 'Add_to_memory' pour ajouter des informations sur la mémoire à long terme
+Fais ceci avec cette phrase : {command}
+Voilà le contexte de la discussion, cela peut être utile pour faire ton choix : {memory}""",
         model="llama3"
     )
     print(choice)
+
+    memory.append(command)
     if 'Launch' in choice:
         app_name = choice.replace("launch", "").strip()
         pyautogui.press('super')
@@ -103,6 +131,11 @@ Fais ceci avec cette phrase : {command}""",
         pyautogui.press("enter")
         reponse = generate_response(command) 
         return reponse 
+
+    if 'Screenshot' in choice :
+        screenshot()
+        reponse = generate_response(command)
+        return reponse
 
     elif 'Control_sound' in choice:
         devices = AudioUtilities.GetSpeakers()
@@ -142,9 +175,12 @@ Voilà la demande de l'utilisateur, à toi de faire le prompt en suivant mes ins
         prompts = [ImaginePrompt(prompt_gen_image)]
         for result in imagine(prompts):
             img = result.img
-            return result.img
+            file_name = f"generated_image_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+            img.save(os.path.join(os.getcwd(), file_name))  # sauvegarde l'image dans le répertoire courant
+            img1 = Image.open(file_name)
+            img1.show()  # affiche l'image
+            return "Image générée avec succès!"
             print("c'est bon")
-        
 
     if 'Psu_bat' in choice :
         battery = psutil.sensors_battery()
@@ -162,35 +198,45 @@ model='llama3')
         return reponse
 
     if 'Jokes' in choice :
-        blague = asyncio.run(print_joke())
+        blague = await print_joke()
         return blague
 
     if 'Control_music' in choice :
+        if not gw.getWindowsWithTitle('Spotify'):
+            pyautogui.press('super')
+            pyautogui.sleep(1)
+            pyautogui.typewrite('Spotify')
+            pyautogui.press("enter")
+            pyautogui.sleep(5)
         control_media(choice)
         response = generate_response(command)
         return response
 
     if 'Ocr' in choice :
-        # Initialize EasyOCR reader
         reader = easyocr.Reader(['en', 'fr'])
-        # Create a Tkinter instance to use the file dialog
         root = Tk()
         root.withdraw()
         file_path = filedialog.askopenfilename(title="Select a PDF file", filetypes=[("PDF files", "*.pdf")])
-        # Open the selected PDF file
         doc = fitz.open(file_path)
-        # Loop through each page and extract text
         for i in range(doc.page_count):
             page = doc.load_page(i)
             pixmap = page.get_pixmap()
-            img_data = pixmap.tobytes("png")  # Convert to PNG bytes
+            img_data = pixmap.tobytes("png")
             result = reader.readtext(img_data)
-            text = ' '.join([item[1] for item in result])  # Récupère uniquement le texte détecté
+            text = ' '.join([item[1] for item in result])
             print(text)
         response = ollam_nlp.generate_text(prompt=
 f"""L'utilisateur vient de te faire une demande qui nécessite que tu utilise des informations issus d'un pdf. Voici la demande {command}.
 Voici le fichier que tu dois utiliser pour répondre, tu répondras toujours en francais {text}""", model = 'llama3')
         return response
 
+    if 'Time' in choice :
+        temps = get_time()
+        response =ollam_nlp.generate_text(prompt=
+f"""Tu dois dire l'heure qu'il est en utilisant ces informations {temps}""", model = 'llama3')
+        return response
 
-
+    if 'text' in choice :
+        response = ollam_nlp.generate_text(prompt =
+f"""Tu dois répondre à cette demande : {command}. Le contexte de la conversation peut t'être utile, le voici : {memory}""", model='llama3')
+        return response
